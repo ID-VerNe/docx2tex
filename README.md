@@ -40,8 +40,7 @@ word_review_2_tex/
 │   │   └── models.py               # 数据模型定义（如 Comment, Revision 类）
 ├── interface/                      # 命令行接口示例
 │   └── cli.py
-├── project.md                      # 项目计划书
-└── README.md                       # 本文件
+└── README.md                       
 ```
 
 ## 使用方法
