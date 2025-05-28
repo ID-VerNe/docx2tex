@@ -13,17 +13,21 @@
 
 ## 安装
 
-由于此库尚未发布到 PyPI，您可以通过以下方式在本地使用：
+您可以通过 `pip` 从 PyPI 安装此库：
 
-1.  **克隆项目**：
-    ```bash
-    git clone [您的项目仓库地址]
-    cd word_review_2_tex # 或者您的项目根目录
-    ```
-2.  **安装依赖**：
-    ```bash
-    pip install python-docx lxml
-    ```
+```bash
+pip install word-review-parser
+```
+
+## GitHub 仓库
+
+您可以在 GitHub 上找到此项目的源代码：
+
+[https://github.com/ID-VerNe/docx2tex.git](https://github.com/ID-VerNe/docx2tex.git)
+
+## 许可证
+
+本项目采用 MIT 许可证。详情请参阅仓库中的 `LICENSE` 文件。
 
 ## 项目结构
 
@@ -150,7 +154,3 @@ print(processor_default.get_original_draft())
 ```bash
 python interface/cli.py
 ```
-
-## 贡献与未来计划
-
-欢迎对本项目进行贡献！请参阅 `project.md` 文件了解详细的项目计划、未来展望和改进方向。
