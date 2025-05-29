@@ -21,7 +21,8 @@ class WordProcessor:
     def __init__(self, filepath,
                  added_tag_start: str = "\\added{", added_tag_end: str = "}",
                  deleted_tag_start: str = "\\deleted{", deleted_tag_end: str = "}",
-                 comment_tag_start: str = "\\comment{", comment_tag_end: str = "}"):
+                 comment_tag_start: str = "\\comment{", comment_tag_end: str = "}",
+                 merge_revisions: bool = True):
         """
         Initializes the WordProcessor with a document file path and custom tags.
 
@@ -33,6 +34,7 @@ class WordProcessor:
             deleted_tag_end: The ending tag for deleted text (default: "}").
             comment_tag_start: The starting tag for comments (default: "\\comment{").
             comment_tag_end: The ending tag for comments (default: "}").
+            merge_revisions: Whether to merge revisions into a single string (default: True).
         """
         self._filepath = filepath
         self._document = None
@@ -42,6 +44,7 @@ class WordProcessor:
         self._deleted_tag_end = deleted_tag_end
         self._comment_tag_start = comment_tag_start
         self._comment_tag_end = comment_tag_end
+        self._merge_revisions = merge_revisions
         logger.info(f"Initialized WordProcessor with file: {filepath}")
 
     def load_document(self) -> bool:
@@ -266,7 +269,8 @@ class WordProcessor:
                                                            include_deleted: bool = True,
                                                            include_comments: bool = True,
                                                            as_final_draft: bool = False,
-                                                           as_original_draft: bool = False) -> str:
+                                                           as_original_draft: bool = False,
+                                                           merge_revisions: bool = None) -> str:
         """
         Generates a formatted text representation of the document,
         including revisions (inserted/deleted text) and comments,
@@ -309,6 +313,9 @@ class WordProcessor:
                             comment_text_parts.append(t_element.text)
                 comments_by_id[comment_id] = "".join(comment_text_parts)
 
+        # Determine the actual merge_revisions setting
+        _merge_revisions = self._merge_revisions if merge_revisions is None else merge_revisions
+
         formatted_text_lines = []
 
         # Iterate through paragraphs in the document XML
@@ -317,80 +324,166 @@ class WordProcessor:
             # Keep track of open comment ranges
             open_comment_ids = set()
 
+            current_revision_type = None
+            current_revision_text = ""
+
+            # Helper to flush accumulated revision text
+            def flush_revision_text():
+                nonlocal current_revision_type, current_revision_text
+                if current_revision_text:
+                    if current_revision_type == "inserted":
+                        paragraph_content.append(f"{self._added_tag_start}{current_revision_text}{self._added_tag_end}")
+                    elif current_revision_type == "deleted":
+                        paragraph_content.append(f"{self._deleted_tag_start}{current_revision_text}{self._deleted_tag_end}")
+                    current_revision_text = ""
+                    current_revision_type = None
+
             for child in p_element.iterchildren():
                 tag = etree.QName(child.tag).localname
                 text_content = ""
 
                 # Extract text from w:t (text run) elements
                 if tag == 'r': # w:r (run)
+                    # Flush any pending revision text before processing normal run content
+                    if _merge_revisions and current_revision_text:
+                        flush_revision_text()
+
                     for t_element in child.xpath('.//w:t', namespaces=nsmap):
                         if t_element.text:
                             text_content += t_element.text
+
                     # Check for inserted/deleted runs within a normal run
-                    for ins_element in child.xpath('.//w:ins', namespaces=nsmap):
-                        ins_text_parts = []
-                        for t_elem in ins_element.xpath('.//w:t', namespaces=nsmap):
-                            if t_elem.text:
-                                ins_text_parts.append(t_elem.text)
-                        if ins_text_parts:
-                            if as_original_draft:
-                                # In original draft, added text is ignored
-                                pass
-                            elif as_final_draft or not include_added:
-                                # In final draft or if not including added, just include the text
+                    ins_elements = child.xpath('.//w:ins', namespaces=nsmap)
+                    del_elements = child.xpath('.//w:del', namespaces=nsmap)
+
+                    if ins_elements and include_added and not as_original_draft:
+                        for ins_element in ins_elements:
+                            ins_text_parts = []
+                            for t_elem in ins_element.xpath('.//w:t', namespaces=nsmap):
+                                if t_elem.text:
+                                    ins_text_parts.append(t_elem.text)
+                            if ins_text_parts:
+                                if _merge_revisions:
+                                    if current_revision_type == "inserted":
+                                        current_revision_text += ''.join(ins_text_parts)
+                                    else:
+                                        flush_revision_text()
+                                        current_revision_type = "inserted"
+                                        current_revision_text = ''.join(ins_text_parts)
+                                else:
+                                    text_content += f"{self._added_tag_start}{''.join(ins_text_parts)}{self._added_tag_end}"
+                    elif as_final_draft or not include_added:
+                        for ins_element in ins_elements:
+                            ins_text_parts = []
+                            for t_elem in ins_element.xpath('.//w:t', namespaces=nsmap):
+                                if t_elem.text:
+                                    ins_text_parts.append(t_elem.text)
+                            if ins_text_parts:
                                 text_content += ''.join(ins_text_parts)
-                            else:
-                                text_content += f"{self._added_tag_start}{''.join(ins_text_parts)}{self._added_tag_end}"
-                    for del_element in child.xpath('.//w:del', namespaces=nsmap):
-                        del_text_parts = []
-                        for t_elem in del_element.xpath('.//w:t', namespaces=nsmap):
-                            if t_elem.text:
-                                del_text_parts.append(t_elem.text)
-                        if del_text_parts:
-                            if as_final_draft:
-                                # In final draft, deleted text is ignored
-                                pass
-                            elif as_original_draft or not include_deleted:
-                                # In original draft or if not including deleted, just include the text
+
+                    if del_elements and include_deleted and not as_final_draft:
+                        for del_element in del_elements:
+                            del_text_parts = []
+                            for t_elem in del_element.xpath('.//w:t', namespaces=nsmap):
+                                if t_elem.text:
+                                    del_text_parts.append(t_elem.text)
+                            if del_text_parts:
+                                if _merge_revisions:
+                                    if current_revision_type == "deleted":
+                                        current_revision_text += ''.join(del_text_parts)
+                                    else:
+                                        flush_revision_text()
+                                        current_revision_type = "deleted"
+                                        current_revision_text = ''.join(del_text_parts)
+                                else:
+                                    text_content += f"{self._deleted_tag_start}{''.join(del_text_parts)}{self._deleted_tag_end}"
+                    elif as_original_draft or not include_deleted:
+                        for del_element in del_elements:
+                            del_text_parts = []
+                            for t_elem in del_element.xpath('.//w:t', namespaces=nsmap):
+                                if t_elem.text:
+                                    del_text_parts.append(t_elem.text)
+                            if del_text_parts:
                                 text_content += ''.join(del_text_parts)
-                            else:
-                                text_content += f"{self._deleted_tag_start}{''.join(del_text_parts)}{self._deleted_tag_end}"
 
                 elif tag == 'ins': # w:ins (inserted text)
-                    for t_element in child.xpath('.//w:t', namespaces=nsmap):
-                        if t_element.text:
-                            text_content += t_element.text
-                    if text_content:
-                        if as_original_draft:
-                            pass
-                        elif as_final_draft or not include_added:
-                            pass # Already handled by parent 'r' or directly included
-                        else:
-                            text_content = f"{self._added_tag_start}{text_content}{self._added_tag_end}"
+                    if include_added and not as_original_draft:
+                        text_parts = []
+                        for t_element in child.xpath('.//w:t', namespaces=nsmap):
+                            if t_element.text:
+                                text_parts.append(t_element.text)
+                        if text_parts:
+                            if _merge_revisions:
+                                if current_revision_type == "inserted":
+                                    current_revision_text += ''.join(text_parts)
+                                else:
+                                    flush_revision_text()
+                                    current_revision_type = "inserted"
+                                    current_revision_text = ''.join(text_parts)
+                            else:
+                                text_content = f"{self._added_tag_start}{''.join(text_parts)}{self._added_tag_end}"
+                    elif as_final_draft or not include_added:
+                        text_parts = []
+                        for t_element in child.xpath('.//w:t', namespaces=nsmap):
+                            if t_element.text:
+                                text_parts.append(t_element.text)
+                        if text_parts:
+                            text_content = ''.join(text_parts)
                 elif tag == 'del': # w:del (deleted text)
-                    # Look for w:delText directly within w:del or within w:r inside w:del
-                    for del_text_element in child.xpath('.//w:delText', namespaces=nsmap):
-                        if del_text_element.text:
-                            text_content += del_text_element.text
-                    if text_content:
-                        if as_final_draft:
-                            pass
-                        elif as_original_draft or not include_deleted:
-                            pass # Already handled by parent 'r' or directly included
-                        else:
-                            text_content = f"{self._deleted_tag_start}{text_content}{self._deleted_tag_end}"
+                    if include_deleted and not as_final_draft:
+                        text_parts = []
+                        # Look for w:delText directly within w:del or within w:r inside w:del
+                        for del_text_element in child.xpath('.//w:delText', namespaces=nsmap):
+                            if del_text_element.text:
+                                text_parts.append(del_text_element.text)
+                        for t_element in child.xpath('.//w:t', namespaces=nsmap): # Also check for w:t within w:del
+                            if t_element.text:
+                                text_parts.append(t_element.text)
+                        if text_parts:
+                            if _merge_revisions:
+                                if current_revision_type == "deleted":
+                                    current_revision_text += ''.join(text_parts)
+                                else:
+                                    flush_revision_text()
+                                    current_revision_type = "deleted"
+                                    current_revision_text = ''.join(text_parts)
+                            else:
+                                text_content = f"{self._deleted_tag_start}{''.join(text_parts)}{self._deleted_tag_end}"
+                    elif as_original_draft or not include_deleted:
+                        text_parts = []
+                        for del_text_element in child.xpath('.//w:delText', namespaces=nsmap):
+                            if del_text_element.text:
+                                text_parts.append(del_text_element.text)
+                        for t_element in child.xpath('.//w:t', namespaces=nsmap):
+                            if t_element.text:
+                                text_parts.append(t_element.text)
+                        if text_parts:
+                            text_content = ''.join(text_parts)
                 elif tag == 'commentRangeStart' and include_comments and not as_final_draft and not as_original_draft:
+                    # Flush any pending revision text before a comment range
+                    if _merge_revisions and current_revision_text:
+                        flush_revision_text()
                     comment_id = child.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id')
                     if comment_id in comments_by_id:
                         open_comment_ids.add(comment_id)
                 elif tag == 'commentRangeEnd' and include_comments and not as_final_draft and not as_original_draft:
+                    # Flush any pending revision text before a comment range
+                    if _merge_revisions and current_revision_text:
+                        flush_revision_text()
                     comment_id = child.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}id')
                     if comment_id in open_comment_ids:
                         comment_text = comments_by_id.get(comment_id, "Comment Not Found")
                         paragraph_content.append(f"{self._comment_tag_start}{comment_text}{self._comment_tag_end}")
                         open_comment_ids.remove(comment_id)
 
-                paragraph_content.append(text_content)
+                if text_content: # Only append if there's actual text
+                    # If not merging, or if it's normal text, append directly
+                    if not _merge_revisions or (current_revision_type is None and not (tag == 'ins' or tag == 'del')):
+                        paragraph_content.append(text_content)
+
+            # After iterating through all children, flush any remaining accumulated revision text
+            if _merge_revisions and current_revision_text:
+                flush_revision_text()
 
             formatted_text_lines.append("".join(paragraph_content).strip())
 
@@ -487,14 +580,14 @@ class WordProcessor:
         Generates the final draft of the document (all additions accepted, all deletions rejected, no comments).
         """
         logger.info("Generating final draft.")
-        return self.get_document_with_revisions_and_comments_formatted(as_final_draft=True)
+        return self.get_document_with_revisions_and_comments_formatted(as_final_draft=True, merge_revisions=False)
 
     def get_original_draft(self) -> str:
         """
         Generates the original draft of the document (all additions rejected, all deletions accepted, no comments).
         """
         logger.info("Generating original draft.")
-        return self.get_document_with_revisions_and_comments_formatted(as_original_draft=True)
+        return self.get_document_with_revisions_and_comments_formatted(as_original_draft=True, merge_revisions=False)
 
     def replace_text(self, old_text, new_text):
         # --- ADD: Method docstring ---
