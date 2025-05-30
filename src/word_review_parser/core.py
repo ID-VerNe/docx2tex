@@ -7,6 +7,8 @@ from docx.opc.exceptions import PackageNotFoundError
 import os
 import zipfile
 from lxml import etree
+from .latex_parser import LatexParser
+from .word_builder import WordBuilder
 
 # --- ADD: Configure logging ---
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] [%(name)s.%(funcName)s] - %(message)s')
@@ -17,6 +19,7 @@ class WordProcessor:
     """
     Processes Word documents (.docx) and extracts review markings.
     Allows customization of output formatting for revisions and comments.
+    Also provides functionality to convert LaTeX text with revision/comment tags to Word.
     """
     def __init__(self, filepath,
                  added_tag_start: str = "\\added{", added_tag_end: str = "}",
@@ -45,6 +48,7 @@ class WordProcessor:
         self._comment_tag_start = comment_tag_start
         self._comment_tag_end = comment_tag_end
         self._merge_revisions = merge_revisions
+        self._latex_parser = LatexParser() # Initialize LatexParser
         logger.info(f"Initialized WordProcessor with file: {filepath}")
 
     def load_document(self) -> bool:
@@ -646,3 +650,49 @@ class WordProcessor:
             logger.info(f"Successfully saved document to: {output_filepath}")
         except Exception as e:
             logger.error(f"Error saving document to {output_filepath}. Exception: {e}", exc_info=True)
+
+    def convert_latex_to_word(self, latex_text: str, output_docx_path: str,
+                              template_unzipped_path: str = "word_template_base") -> bool:
+        """
+        Converts LaTeX text containing revision and comment tags into a Word document.
+
+        This method parses the input LaTeX text for specific tags (e.g., \\added, \\deleted,
+        \\replaced, \\comment) and then uses a WordBuilder to construct a .docx file
+        that visually represents these revisions and comments.
+
+        Args:
+            latex_text: The input LaTeX text string with revision and comment tags.
+            output_docx_path: The full path where the output .docx file will be saved.
+            template_unzipped_path: The path to the unzipped Word document template directory.
+                                    This directory should contain the 'word' and 'docProps'
+                                    subdirectories, etc., from an unzipped .docx file.
+
+        Returns:
+            bool: True if the conversion and document building were successful, False otherwise.
+        """
+        logger.info(f"Starting LaTeX to Word conversion for output: {output_docx_path}")
+        
+        # 1. Parse the LaTeX text
+        parsed_data = list(self._latex_parser.parse_text(latex_text))
+        logger.info(f"Parsed {len(parsed_data)} LaTeX tags.")
+
+        if not parsed_data:
+            logger.warning("No LaTeX revision or comment tags found in the input text. Creating an empty document with template content.")
+            # If no tags, still create a document based on the template
+            # This might be handled by WordBuilder itself, or we can explicitly
+            # create a dummy entry if WordBuilder requires it.
+            # For now, let's assume WordBuilder can handle an empty list or
+            # we'll just copy the template.
+            # If WordBuilder needs at least one item, we could add a placeholder.
+            # For this implementation, we'll proceed with an empty list.
+
+        # 2. Build the Word document
+        word_builder = WordBuilder(template_path=template_unzipped_path, output_path=output_docx_path)
+        success = word_builder.build_document(latex_text, parsed_data) # Pass original latex_text
+
+        if success:
+            logger.info(f"Successfully converted LaTeX to Word document: {output_docx_path}")
+        else:
+            logger.error(f"Failed to convert LaTeX to Word document: {output_docx_path}")
+        
+        return success

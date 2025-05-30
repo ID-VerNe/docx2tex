@@ -1,6 +1,6 @@
 # word-review-parser
 
-`word-review-parser` 是一个Python库，旨在帮助您解析Microsoft Word文档（.docx）中的审阅标记，包括修订（插入和删除的文本）和批注。它提供了一种以结构化方式访问这些信息的方法，并能将文档内容与审阅标记一起格式化输出为易于阅读的文本格式，例如类似LaTeX的 `\added{}` 和 `\deleted{}` 语法。
+`word-review-parser` 是一个Python库，旨在帮助您解析Microsoft Word文档（.docx）中的审阅标记，包括修订（插入和删除的文本）和批注，**以及将带有特定标记的LaTeX文本转换为带有Word审阅标记的.docx文件**。它提供了一种以结构化方式访问这些信息的方法，并能将文档内容与审阅标记一起格式化输出为易于阅读的文本格式，例如类似LaTeX的 `\added{}` 和 `\deleted{}` 语法。
 
 ## 核心功能
 
@@ -37,7 +37,9 @@ word_review_2_tex/
 │   ├── word_review_parser/
 │   │   ├── __init__.py             # 库的入口，暴露主要API
 │   │   ├── core.py                 # 核心逻辑：Word文档XML解析、文本提取、格式化
-│   │   └── models.py               # 数据模型定义（如 Comment, Revision 类）
+│   │   ├── latex_parser.py         # LaTeX文本解析器
+│   │   ├── models.py               # 数据模型定义（如 Comment, Revision 类）
+│   │   └── word_builder.py         # Word文档构建器
 ├── interface/                      # 命令行接口示例
 │   └── cli.py
 └── README.md                       
@@ -52,7 +54,7 @@ word_review_2_tex/
 `WordProcessor` 类现在直接在初始化时接收 `.docx` 文件路径。您还可以自定义用于标记插入、删除和批注的字符串。
 
 ```python
-from src.word_review_parser import WordProcessor
+from word_review_parser import WordProcessor
 import os
 
 # 假设您的文档在项目根目录
@@ -152,4 +154,56 @@ print(processor_default.get_original_draft())
 
 ```bash
 python interface/cli.py
+```
+
+### 3. `LatexParser` 类使用方法
+
+`LatexParser` 类用于解析包含特定标记（如 `\added{}`, `\deleted{}`, `\replaced{}{}`, `\highlight{}`, `\comment{}`）的LaTeX文本。
+
+```python
+from word_review_parser import LatexParser
+
+latex_text = r"""
+这是一个示例文本。
+\added{这是新增的内容。}
+\deleted{这是被删除的内容。}
+\replaced{这是新的内容}{这是被替换的旧内容}。
+\highlight{这是需要高亮的内容}。
+这是一个\comment{这是一个批注}示例。
+"""
+
+parser = LatexParser()
+parsed_data = list(parser.parse_text(latex_text))
+
+print("\n--- 解析后的LaTeX标记 ---")
+for tag in parsed_data:
+    print(tag)
+```
+
+### 4. `WordBuilder` 类使用方法
+
+`WordBuilder` 类用于将解析后的LaTeX数据构建成一个带有Word审阅标记（修订和批注）的.docx文件。您需要提供一个Word模板文件（通常是解压后的.docx文件目录结构）和输出文件路径。**由于模板文件已包含在包中，提供模板文件路径现在是可选的。**
+
+```python
+from word_review_parser import WordBuilder
+import os
+
+# 假设您有一个名为 'word_template_base' 的解压后的Word模板目录
+template_path = "word_template_base" 
+output_path = "output_docs/converted_from_latex.docx"
+
+# 确保输出目录存在
+os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+# 假设 parsed_data 是您从 LatexParser 获得的解析结果列表
+# parsed_data = [...] 
+
+builder = WordBuilder(template_path, output_path)
+success = builder.build_document(latex_text, parsed_data) # 需要原始latex_text和解析数据
+
+if success:
+    print(f"\n成功生成Word文档: {output_path}")
+else:
+    print("\n生成Word文档失败。")
+
 ```
