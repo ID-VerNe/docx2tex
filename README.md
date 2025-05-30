@@ -10,6 +10,7 @@
 *   **修订提取**：识别并提取插入（`\added{}`）和删除（`\deleted{}`）的文本，包括作者和日期。
 *   **格式化输出**：将整个文档内容（包括段落、修订和批注）格式化为纯文本字符串，支持自定义标记。
 *   **多种输出模式**：允许单独输出增加的文本、删除的文本、批注、最终稿（接受所有修订，忽略批注）和原始稿（拒绝所有修订，忽略批注）。
+*   **LaTeX到Word转换**：将带有特定标记的LaTeX文本转换为带有Word审阅标记的.docx文件。
 
 ## 安装
 
@@ -23,7 +24,7 @@ pip install word-review-parser
 
 您可以在 GitHub 上找到此项目的源代码：
 
-[https://github.com/ID-VerNe/docx2tex.git](https://github.com/ID-VerNe/docx2tex.git)
+[https://github.com/ID-VerNe/docx2tex](https://github.com/ID-VerNe/docx2tex)
 
 ## 许可证
 
@@ -182,13 +183,13 @@ for tag in parsed_data:
 
 ### 4. `WordBuilder` 类使用方法
 
-`WordBuilder` 类用于将解析后的LaTeX数据构建成一个带有Word审阅标记（修订和批注）的.docx文件。您需要提供一个Word模板文件（通常是解压后的.docx文件目录结构）和输出文件路径。**由于模板文件已包含在包中，提供模板文件路径现在是可选的。**
+`WordBuilder` 类用于将解析后的LaTeX数据构建成一个带有Word审阅标记（修订和批注）的.docx文件。您需要提供一个Word模板文件和输出文件路径。Word文件模板可以在[https://github.com/ID-VerNe/docx2tex/blob/master/word_template_base.7z](https://github.com/ID-VerNe/docx2tex/blob/master/word_template_base.7z)下载，请解压后放到某个目录，然后用template_path向WordBuilder该参数。
 
 ```python
 from word_review_parser import WordBuilder
 import os
 
-# 假设您有一个名为 'word_template_base' 的解压后的Word模板目录
+# 假设您有一个名为 'word_template_base' 的解压后的Word模板目录，
 template_path = "word_template_base" 
 output_path = "output_docs/converted_from_latex.docx"
 
@@ -205,5 +206,4 @@ if success:
     print(f"\n成功生成Word文档: {output_path}")
 else:
     print("\n生成Word文档失败。")
-
 ```
